@@ -1,3 +1,5 @@
+import { DateTime } from 'luxon';
+
 class CronHelper {
     private fields: number[][];
   
@@ -24,69 +26,77 @@ class CronHelper {
       ];
   
       const { min, max } = ranges[fieldIndex];
-      const result: number[] = [];
+      const result: Set<number> = new Set();
   
       if (field === '*') {
         for (let i = min; i <= max; i++) {
-          result.push(i);
+          result.add(i);
         }
-        return result;
+        return Array.from(result).sort((a, b) => a - b);
       }
   
       const parts = field.split(',');
       for (const part of parts) {
         if (part.includes('-')) {
-          const [start, end] = part.split('-').map(Number);
-          for (let i = start; i <= end; i++) {
-            result.push(i);
+          const [startStr, endStr] = part.split('-');
+          let [start, end] = [Number(startStr), Number(endStr)];
+          let step = 1;
+  
+          if (endStr.includes('/')) {
+            [end, step] = endStr.split('/').map(Number);
+          }
+  
+          for (let i = start; i <= end; i += step) {
+            result.add(i);
           }
         } else if (part.includes('/')) {
-          const [start, step] = part.split('/');
-          const startNum = start === '*' ? min : Number(start);
-          for (let i = startNum; i <= max; i += Number(step)) {
-            result.push(i);
+          const [startStr, stepStr] = part.split('/');
+          const start = startStr === '*' ? min : Number(startStr);
+          const step = Number(stepStr);
+  
+          for (let i = start; i <= max; i += step) {
+            result.add(i);
           }
         } else {
-          result.push(Number(part));
+          result.add(Number(part));
         }
       }
   
-      return result.filter(num => num >= min && num <= max).sort((a, b) => a - b);
+      return Array.from(result).filter(num => num >= min && num <= max).sort((a, b) => a - b);
     }
   
-    getNextOccurrences(n: number, fromDate?: Date): Date[] {
+    getNextOccurrences(n: number, fromDate?: Date, timezone: string = 'local'): Date[] {
       const occurrences: Date[] = [];
-      let startDate = fromDate ? fromDate : new Date();
+      let startDate = fromDate 
+        ? DateTime.fromJSDate(fromDate).setZone(timezone)
+        : DateTime.local().setZone(timezone);
   
       while (occurrences.length < n) {
-        startDate = this.getNextOccurrence(startDate);
-        occurrences.push(new Date(startDate));
+        startDate = this.getNextOccurrence(startDate, timezone);
+        occurrences.push(startDate.toJSDate());
       }
   
       return occurrences;
     }
   
-    private getNextOccurrence(fromDate: Date): Date {
-      const date = new Date(fromDate);
-      date.setSeconds(0);
-      date.setMilliseconds(0);
+    private getNextOccurrence(fromDate: DateTime, timezone: string): DateTime {
+      let date = fromDate.set({ second: 0, millisecond: 0 });
   
       while (true) {
         if (
-          this.fields[0].includes(date.getMinutes()) &&
-          this.fields[1].includes(date.getHours()) &&
-          this.fields[2].includes(date.getDate()) &&
-          this.fields[3].includes(date.getMonth() + 1) &&
-          this.fields[4].includes(date.getDay())
+          this.fields[0].includes(date.get('minute')) &&
+          this.fields[1].includes(date.get('hour')) &&
+          this.fields[2].includes(date.get('day')) &&
+          this.fields[3].includes(date.get('month')) &&
+          this.fields[4].includes(date.weekday % 7)
         ) {
           if (date > fromDate) {
             return date;
           }
         }
   
-        date.setMinutes(date.getMinutes() + 1);
+        date = date.plus({ minutes: 1 }).setZone(timezone);
       }
     }
-  }
-  
+}
 export { CronHelper };
